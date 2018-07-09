@@ -43,6 +43,7 @@ module powerbi.extensibility.visual {
         interactivityService: IInteractivityService;
         slicerSettings: HierarchySlicerSettings;
         levels: number;
+        dataView: powerbi.DataView;
     }
 
     export interface HierarchySlicerTreeViewOptions {

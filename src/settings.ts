@@ -50,7 +50,13 @@ module powerbi.extensibility.visual {
         public singleSelect: boolean = true;
     }
 
+    enum SelectionAction {
+        Add,
+        Remove
+    }
+
     class GeneralSettings {
+        private action: any = SelectionAction.Add;
         public selected: string = "";
         public filterValues: string = "";
         public expanded: string = "";

@@ -358,8 +358,9 @@ module powerbi.extensibility.visual {
         private static hasSameCategoryIdentity(dataView1: DataView, dataView2: DataView): boolean {
             if (dataView1
                 && dataView2
-                && dataView1.categorical
-                && dataView2.categorical) {
+                && dataView1.categorical // in table view mapping is null
+                && dataView2.categorical) { // in table view mapping is null
+                debugger;
                 let dv1Categories = dataView1.categorical.categories;
                 let dv2Categories = dataView2.categorical.categories;
                 if (dv1Categories
@@ -374,7 +375,8 @@ module powerbi.extensibility.visual {
                             return false;
 
                         for (let j = 0; j < dv1Length; j++) {
-                            if (!_.isEqual(dv1Identity[j].key, dv2Identity[j].key))
+                            debugger;
+                            if (!_.isEqual((<any>dv1Identity[j]).key, (<any>dv2Identity[j]).key))
                                 return false;
                         }
                     }
@@ -405,9 +407,9 @@ module powerbi.extensibility.visual {
                 .viewport(this.getBodyViewport(this.viewport))
                 .rowHeight(PixelConverter.fromPointToPixel(this.settings.slicerText.textSize))
                 .data(
-                data.dataPoints.filter((d) => !d.isHidden), // Expand/Collapse
-                (d: HierarchySlicerDataPoint) => $.inArray(d, data.dataPoints),
-                resetScrollbar
+                    data.dataPoints.filter((d) => !d.isHidden), // Expand/Collapse
+                    (d: HierarchySlicerDataPoint) => $.inArray(d, data.dataPoints),
+                    resetScrollbar
                 )
                 .render();
 
@@ -475,7 +477,7 @@ module powerbi.extensibility.visual {
                     .data((d: HierarchySlicerDataPoint) => {
                         return [d];
                     });
-                    expandCollapse.exit().remove();
+                expandCollapse.exit().remove();
                 expandCollapse
                     .enter()
                     .insert("button", ":first-child")
@@ -634,6 +636,7 @@ module powerbi.extensibility.visual {
                     let behaviorOptions: HierarchySlicerBehaviorOptions = {
                         hostServices: this.hostServices,
                         dataPoints: data.dataPoints,
+                        dataView: this.dataView,
                         expanders: expanders,
                         slicerBodySpinner: this.slicerBodySpinner,
                         slicerContainer: this.slicerContainer,

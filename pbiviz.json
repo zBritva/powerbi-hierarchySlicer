@@ -1,15 +1,15 @@
 {
   "visual": {
     "name": "hierarchySlicer",
-    "displayName": "HierarchySlicer",
-    "guid": "PBI_CV_B232C01E_3021_4106_B09E_42929DAC879C",
+    "displayName": "HierarchySlicer MultiColumn API",
+    "guid": "PBI_CV_B232C01E_3021_4106_B09E_42929DAC879C_MultiColumnAPI",
     "visualClassName": "HierarchySlicer",
     "version": "1.0.0",
     "description": "",
     "supportUrl": "",
     "gitHubUrl": ""
   },
-  "apiVersion": "1.7.0",
+  "apiVersion": "2.2.0",
   "author": {
     "name": "",
     "email": ""

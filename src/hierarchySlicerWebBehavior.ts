@@ -53,6 +53,7 @@ module powerbi.extensibility.visual {
         private slicerItemLabels: Selection<any>;
         private slicerItemInputs: Selection<any>;
         private dataPoints: HierarchySlicerDataPoint[];
+        private dataView: powerbi.DataView;
         private interactivityService: IInteractivityService;
         private selectionHandler: ISelectionHandler;
         private settings: HierarchySlicerSettings;
@@ -70,6 +71,7 @@ module powerbi.extensibility.visual {
             this.slicerItemLabels = options.slicerItemLabels;
             this.slicerItemInputs = options.slicerItemInputs;
             this.dataPoints = options.dataPoints;
+            this.dataView = options.dataView;
             this.interactivityService = options.interactivityService;
             this.selectionHandler = selectionHandler;
             this.settings = options.slicerSettings;
@@ -107,9 +109,6 @@ module powerbi.extensibility.visual {
                     this.renderMouseover();
                 }
             });
-
-
-
 
             options.slicerContainer.classed("hasSelection", true);
 
@@ -150,9 +149,10 @@ module powerbi.extensibility.visual {
                         for (let i = 0; i < selectDataPoints.length; i++) {
                             if (!selected && !selectDataPoints[i].selected) {
                                 selectDataPoints[i].selected = !selected;
-                            } else if (selected && (this.dataPoints.filter((dp) => dp.selected && dp.level === d.level && dp.parentId === d.parentId).length === 0)) {
-                                selectDataPoints[i].selected = !selected;
-                            }
+                            } else
+                                if (selected && (this.dataPoints.filter((dp) => dp.selected && dp.level === d.level && dp.parentId === d.parentId).length === 0)) {
+                                    selectDataPoints[i].selected = !selected;
+                                }
                         }
                     }
                     if (d.isLeaf) {
@@ -299,17 +299,78 @@ module powerbi.extensibility.visual {
             if (this.dataPoints.length === 0) { // Called without data
                 return;
             }
-            // simple filter
-            const selectedLeafs: HierarchySlicerDataPoint[] = this.dataPoints.filter((point) => point.isLeaf && point.selected);
-            if (!selectedLeafs.length) {
-                return;
+
+            const tablesAndColumns: {} = {};
+
+            this.dataPoints.forEach((dataPoint: HierarchySlicerDataPoint) => {
+                if (dataPoint.selected) {
+                    if (!tablesAndColumns[dataPoint.filterTarget.table]) {
+                        tablesAndColumns[dataPoint.filterTarget.table] = {};
+                    }
+
+                    if (!tablesAndColumns[dataPoint.filterTarget.table][(<IFilterColumnTarget>dataPoint.filterTarget).column]) {
+                        tablesAndColumns[dataPoint.filterTarget.table][(<IFilterColumnTarget>dataPoint.filterTarget).column] = [];
+                    }
+
+                    tablesAndColumns[dataPoint.filterTarget.table][(<IFilterColumnTarget>dataPoint.filterTarget).column].push(dataPoint);
+                }
+            });
+
+            const targets: any = [];
+            Object.keys(tablesAndColumns).forEach(table =>
+                Object.keys(tablesAndColumns[table]).forEach(column => {
+                    targets.push({
+                        column: column,
+                        table: table
+                    });
+                }
+                )
+            );
+
+            let maxLevel = _.max(this.dataPoints.map( d => d.level));
+            let filterDataPoints: HierarchySlicerDataPoint[] = this.dataPoints.filter(d => d.selected && d.level === maxLevel);
+
+            let getParent = (value: HierarchySlicerDataPoint): HierarchySlicerDataPoint[] => {
+                if (value.parentId) {
+                    let parent: HierarchySlicerDataPoint = this.dataPoints.filter(d => d.ownId === value.parentId)[0];
+                    if (parent.parentId) {
+                        let grandParents = getParent(parent);
+                        grandParents.push(parent);
+                        return grandParents;
+                    }
+                    else {
+                        return [parent];
+                    }
+                }
+                return null;
+            };
+
+            // create table from tree
+            let filterValues: any[] = filterDataPoints.map((dataPoint: HierarchySlicerDataPoint) => { // TupleValueType
+                let parents: HierarchySlicerDataPoint[] = getParent(dataPoint);
+                parents.push(dataPoint);
+                return parents.map( dataPoint => {
+                    return <any>{ // ITupleElementValue
+                        // need to pass correct value type
+                        value: isNaN(Number(dataPoint.value)) ? dataPoint.value : Number(dataPoint.value)
+                    };
+                });
+            });
+
+            let filterInstance: any = {
+                target: targets,
+                operator: "In",
+                values: filterValues,
+                $schema: "http://powerbi.com/product/schema#tuple",
+                filterType: 6
+            };
+            console.log("Apllied filter values", filterValues);
+
+            // console.log("Apllied filters", filters);
+            if (!filterValues.length || !filterValues.length) {
+                this.persistFilter(null, 1);
             }
-            const target: IFilterTarget = selectedLeafs[0].filterTarget;
-            const filter: IBasicFilter = new window["powerbi-models"].BasicFilter(
-                target,
-                "In",
-                selectedLeafs.map((point) => point.value));
-            this.persistFilter(filter);
+            this.persistFilter(filterInstance);
         }
 
         private getParentDataPoints(dataPoints: HierarchySlicerDataPoint[], parentId: string): HierarchySlicerDataPoint[] {
@@ -327,7 +388,7 @@ module powerbi.extensibility.visual {
             }
         }
 
-        private persistFilter(filter: IFilter) {
+        private persistFilter(filter: IFilter | IFilter[], action = 0) {
             let properties: { [propertyName: string]: DataViewPropertyValue } = {};
             let filterValues = this.dataPoints.filter((d) => d.selected).map((d) => d.ownId).join(",");
             if (filterValues) {
@@ -350,7 +411,9 @@ module powerbi.extensibility.visual {
             this.hostServices.persistProperties(objects);
             this.hostServices.applyJsonFilter(filter,
                 hierarchySlicerProperties.filterPropertyIdentifier.objectName,
-                hierarchySlicerProperties.filterPropertyIdentifier.propertyName);
+                hierarchySlicerProperties.filterPropertyIdentifier.propertyName,
+                action
+            );
         }
 
         private persistExpand(updateScrollbar: boolean) {
