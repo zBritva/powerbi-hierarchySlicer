@@ -33,7 +33,7 @@ import { IMargin, CssConstants } from "powerbi-visuals-utils-svgutils";
 import { pixelConverter } from "powerbi-visuals-utils-typeutils";
 import { ITooltipServiceWrapper, createTooltipServiceWrapper, TooltipEventArgs } from "powerbi-visuals-utils-tooltiputils";
 import { valueType } from "powerbi-visuals-utils-typeutils";
-import { IFilterTarget, TupleFilter, FilterType, ITupleFilterTarget, IFilterColumnTarget, ITupleFilter, Selector } from "powerbi-models";
+import { IFilterTarget, TupleFilter, FilterType, ITupleFilterTarget, IFilterColumnTarget, ITupleFilter, Selector, IFilterHierarchyTarget } from "powerbi-models";
 import { select, Selection } from "d3-selection";
 
 import { isEqual, uniqWith } from "lodash-es";
@@ -195,6 +195,78 @@ export class HierarchySlicer implements IVisual {
             };
         }
 
+        enum SQExprKind {
+            Entity,
+            SubqueryRef,
+            ColumnRef,
+            MeasureRef,
+            Aggregation,
+            PropertyVariationSource,
+            Hierarchy,
+            HierarchyLevel,
+            And,
+            Between,
+            In,
+            Or
+        };
+
+        let extractFilterColumnTarget = (categoryColumn: powerbi.DataViewCategoryColumn | powerbi.DataViewMetadataColumn): IFilterTarget => {
+            // take an expression from source or column metadata
+            let expr: any = categoryColumn && (<any>categoryColumn).source && (<any>categoryColumn).source.expr
+                ? (<any>categoryColumn).source.expr as any
+                : (<any>categoryColumn).expr as any;
+        
+            // take table name from source.entity if column definition is simple
+            let filterTargetTable: string = expr && expr.source && expr.source.entity
+                ? expr.source.entity
+                : null;
+        
+            // take expr.ref as column name if column definition is simple
+            let filterTargetColumn: string = expr && expr.ref
+                ? expr.ref
+                : null;
+        
+            // special cases
+            // when data structure is hierarchical
+            if (expr && expr.kind === SQExprKind.HierarchyLevel && (<any>categoryColumn).identityExprs) {
+                // debugger;
+                let hierarchy: string = expr.arg.hierarchy;
+                filterTargetColumn = expr.level;
+                let hierarchyLevel: string = expr.level;
+                // filterTargetColumn = null;
+        
+                // hierarchy: string;
+                // hierarchyLevel: string;
+                // Only if we have hierarchical structure with virtual table, take table name from identityExprs
+                // Power BI creates hierarchy for date type of data (Year, Quater, Month, Days)
+                // For it, Power BI creates a virtual table and gives it generated name as... 'LocalDateTable_bcfa94c1-7c12-4317-9a5f-204f8a9724ca'
+                // Visuals have to use a virtual table name as a target of JSON to filter date hierarchy properly
+                filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.entity;
+                if (expr.arg && expr.arg.kind === SQExprKind.Hierarchy && expr.arg && expr.arg.arg &&
+                    expr.arg.arg.kind === SQExprKind.PropertyVariationSource) {
+                    if ((<any>categoryColumn).identityExprs && (<any>categoryColumn).identityExprs.length) {
+                        filterTargetTable = ((<any>categoryColumn).identityExprs[(<any>categoryColumn).identityExprs.length - 1] as any).source.entity;
+                    }
+                    // filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.arg.entity
+                } else {
+                    // otherwise take column name from expr
+                    filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.entity;
+                }
+
+                return {
+                    table: filterTargetTable,
+                    // column: filterTargetColumn,
+                    hierarchy: hierarchy,
+                    hierarchyLevel: hierarchyLevel
+                };
+            }
+        
+            return {
+                table: filterTargetTable,
+                column: filterTargetColumn
+            };
+        }
+
         let convertRawValue = (rawValue: PrimitiveValue, dataType: ValueTypeDescriptor, full: boolean = false) => {
             if ((dataType.dateTime) && (full)) {
                return new Date(rawValue as Date);
@@ -211,7 +283,7 @@ export class HierarchySlicer implements IVisual {
         const rows: DataViewTableRow[] = dataView.table.rows.map((r) => hierarchyRowIndex.map((i: number) => r[i]));
         const columns: DataViewMetadataColumn[] = hierarchyRowIndex.map((i: number) => rawColumns[i]);
         const columnsMetadata = hierarchyRowIndex.map((i: number) => dataView.metadata.columns[i]);
-        const columnFilters: IFilterColumnTarget[] = columns.map((c: DataViewMetadataColumn) => extractFilterColumnTarget(c));
+        const columnFilters: IFilterTarget[] = columns.map((c: DataViewMetadataColumn) => extractFilterColumnTarget(c));
         const levels = hierarchyRows.length - 1;
         let dataPoints: IHierarchySlicerDataPoint[] = [];
         let fullTree: IHierarchySlicerDataPoint[] = [];
@@ -225,10 +297,22 @@ export class HierarchySlicer implements IVisual {
         if (jsonFilters) {
             if (jsonFilters.length > 0) {
                 const jFilter = jsonFilters[0] as any;
+                debugger;
                 selectedIds = jFilter.values.map((values: any | any[]) => "|~" + (
                         Array.isArray(values) ?
                         values.map((value, index) => {
-                            const columnIndex = columnFilters.findIndex((filter: IFilterColumnTarget) => isEqual(filter, jFilter.target[index]));
+                            let columnIndex = columnFilters.findIndex((filter: IFilterHierarchyTarget) => {
+                                    // workaround, because Power BI doesn't save hierarchy of the filter
+                                    if (filter.hierarchy) {
+                                        let filterCopy: IFilterColumnTarget = {
+                                            column: filter.hierarchyLevel,
+                                            table: filter.table
+                                        }
+                                        return isEqual(filterCopy, jFilter.target[index]) 
+                                    } else {
+                                        return isEqual(filter, jFilter.target[index]) 
+                                    }
+                                });
                             const format = columnIndex > -1 ? columns[columnIndex].format : undefined;
                             return { value: ValueFormat(value.value, format).replace(/,/g, "") + "-" + columnIndex.toString(), index: columnIndex };
                         }).sort((dp1, dp2) => dp1.index - dp2.index).map((dp) => dp.value).join('_|~')
@@ -300,7 +384,7 @@ export class HierarchySlicer implements IVisual {
                 let ownId: string = parentId + (parentId === "" ? "" : "_") + "|~" + labelValueId.replace(/,/g, "") + "-" + c;
                 let searchStr: string = parentSearchStr + labelValue.replace(/,/g, "");
                 let isLeaf: boolean = c === levels;
-                const filterTarget: IFilterColumnTarget = columnFilters[c];
+                const filterTarget: IFilterTarget = columnFilters[c];
                 const selected: boolean = this.settings.general.selectAll || selectedIds.filter((d) => ownId.indexOf(d) > -1).length > 0;
                 toolTip = toolTip.concat([({ displayName: columns[c].displayName, value: labelValue } as VisualTooltipDataItem)]);
 
@@ -534,6 +618,7 @@ export class HierarchySlicer implements IVisual {
             !options.viewport) {
             return;
         }
+        debugger;
 
         this.isInFocus = false;
         this.dataView = options.dataViews[0];
@@ -595,6 +680,7 @@ export class HierarchySlicer implements IVisual {
         this.updateSettings();
         this.updateSlicerBodyDimensions();
 
+        debugger;
         const data = this.data = this.converter(this.dataView, this.jsonFilters, (this.searchInput.node() as HTMLInputElement).value);
         this.maxLevels = this.data.levels + 1;
 

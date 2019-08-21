@@ -33,6 +33,7 @@ import { pixelConverter } from "powerbi-visuals-utils-typeutils";
 import { IFilterColumnTarget, ITupleFilter, FilterType, Selector } from "powerbi-models";
 import { select, event, Selection } from "d3-selection";
 
+
 import * as interfaces from "./interfaces";
 import * as settings from "./settings";
 import * as enums from "./enums";
@@ -366,34 +367,33 @@ export class HierarchySlicerWebBehavior implements IInteractiveBehavior {
             return;
         }
 
-        const tablesAndColumns: any = {};
+        // const tablesAndColumns: any = {};
+        const targets: any = [];
         const dataPoints = this.dataPoints.filter((d) => d.ownId !== "selectAll");
 
         dataPoints.forEach((dataPoint: IHierarchySlicerDataPoint) => {
             const filterTarget = (<IFilterColumnTarget>dataPoint.filterTarget);
             if ((dataPoint.selected) && dataPoint.level <= levels) {
-                if (!tablesAndColumns[filterTarget.table]) {
-                    tablesAndColumns[filterTarget.table] = {};
-                }
+                targets.push(filterTarget)
+                // if (!tablesAndColumns[filterTarget.table]) {
+                //     tablesAndColumns[filterTarget.table] = {};
+                // }
 
-                if (!tablesAndColumns[filterTarget.table][filterTarget.column]) {
-                    tablesAndColumns[filterTarget.table][filterTarget.column] = [];
-                }
+                // if (!tablesAndColumns[filterTarget.table][filterTarget.column]) {
+                //     tablesAndColumns[filterTarget.table][filterTarget.column] = [];
+                // }
 
-                tablesAndColumns[filterTarget.table][filterTarget.column].push(dataPoint);
+                // tablesAndColumns[filterTarget.table][filterTarget.column].push(dataPoint);
             }
         });
 
-        const targets: any = [];
-        Object.keys(tablesAndColumns).forEach(table =>
-            Object.keys(tablesAndColumns[table]).forEach(column => {
-                targets.push({
-                    column: column,
-                    table: table
-                });
-            }
-            )
-        );
+        // Object.keys(tablesAndColumns).forEach(table =>
+        //     Object.keys(tablesAndColumns[table]).forEach(column => {
+        //         delete tablesAndColumns[table][column][0].filterTarget.column;
+        //         targets.push(tablesAndColumns[table][column][0].filterTarget);
+        //     }
+        //     )
+        // );
 
         let filterDataPoints: IHierarchySlicerDataPoint[] = dataPoints.filter(d => d.selected && d.level === levels);
 
@@ -458,12 +458,13 @@ export class HierarchySlicerWebBehavior implements IInteractiveBehavior {
         // make sure that the old method of storing the filter is deleted
         const instance: VisualObjectInstance = {
             objectName: "general",
-            selector: Selector,
+            selector: null,
             properties: {
                 filterValues: ""
             },
         };
         this.hostServices.persistProperties({ remove: [ instance ] });
+        debugger;
         this.hostServices.applyJsonFilter(filter,
             hierarchySlicerProperties.filterPropertyIdentifier.objectName,
             hierarchySlicerProperties.filterPropertyIdentifier.propertyName,
@@ -476,7 +477,7 @@ export class HierarchySlicerWebBehavior implements IInteractiveBehavior {
 
         const instance: VisualObjectInstance = {
             objectName: "general",
-            selector: Selector,
+            selector: null,
             properties: {
                 expanded: expanded
             },
@@ -488,7 +489,7 @@ export class HierarchySlicerWebBehavior implements IInteractiveBehavior {
     private persistSelectAll(selectAll: boolean) {
         const instance: VisualObjectInstance = {
             objectName: "general",
-            selector: Selector,
+            selector: null,
             properties: {
                 selectAll: true
             },
@@ -501,7 +502,7 @@ export class HierarchySlicerWebBehavior implements IInteractiveBehavior {
         properties[hierarchySlicerProperties.mobileViewEnabled.propertyName] = !currentStatus;
         let instance: VisualObjectInstance = {
             objectName: hierarchySlicerProperties.mobileViewEnabled.objectName,
-            selector: Selector,
+            selector: null,
             properties: properties,
         };
         this.hostServices.persistProperties({ merge: [ instance ] });
