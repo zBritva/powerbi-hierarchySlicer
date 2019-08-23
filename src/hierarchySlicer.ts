@@ -213,41 +213,36 @@ export class HierarchySlicer implements IVisual {
         let extractFilterColumnTarget = (categoryColumn: powerbi.DataViewCategoryColumn | powerbi.DataViewMetadataColumn): IFilterTarget => {
             // take an expression from source or column metadata
             let expr: any = categoryColumn && (<any>categoryColumn).source && (<any>categoryColumn).source.expr
-                ? (<any>categoryColumn).source.expr as any
-                : (<any>categoryColumn).expr as any;
-        
+            ? (<any>categoryColumn).source.expr as any
+            : (<any>categoryColumn).expr as any;
+
             // take table name from source.entity if column definition is simple
             let filterTargetTable: string = expr && expr.source && expr.source.entity
                 ? expr.source.entity
                 : null;
-        
+
             // take expr.ref as column name if column definition is simple
             let filterTargetColumn: string = expr && expr.ref
                 ? expr.ref
                 : null;
-        
+
             // special cases
             // when data structure is hierarchical
-            if (expr && expr.kind === SQExprKind.HierarchyLevel && (<any>categoryColumn).identityExprs) {
-                // debugger;
+            if (expr && expr.kind === SQExprKind.HierarchyLevel) {
                 let hierarchy: string = expr.arg.hierarchy;
                 filterTargetColumn = expr.level;
                 let hierarchyLevel: string = expr.level;
-                // filterTargetColumn = null;
-        
-                // hierarchy: string;
-                // hierarchyLevel: string;
+
                 // Only if we have hierarchical structure with virtual table, take table name from identityExprs
                 // Power BI creates hierarchy for date type of data (Year, Quater, Month, Days)
                 // For it, Power BI creates a virtual table and gives it generated name as... 'LocalDateTable_bcfa94c1-7c12-4317-9a5f-204f8a9724ca'
                 // Visuals have to use a virtual table name as a target of JSON to filter date hierarchy properly
                 filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.entity;
-                if (expr.arg && expr.arg.kind === SQExprKind.Hierarchy && expr.arg && expr.arg.arg &&
-                    expr.arg.arg.kind === SQExprKind.PropertyVariationSource) {
+                if (expr.arg && expr.arg.kind === SQExprKind.Hierarchy) {
                     if ((<any>categoryColumn).identityExprs && (<any>categoryColumn).identityExprs.length) {
-                        filterTargetTable = ((<any>categoryColumn).identityExprs[(<any>categoryColumn).identityExprs.length - 1] as any).source.entity;
+                        const identityExprs = ((<any>categoryColumn).identityExprs[(<any>categoryColumn).identityExprs.length - 1] as any);
+                        filterTargetTable = identityExprs.source.entity;
                     }
-                    // filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.arg.entity
                 } else {
                     // otherwise take column name from expr
                     filterTargetTable = expr.arg && expr.arg.arg && expr.arg.arg.entity;
@@ -255,12 +250,12 @@ export class HierarchySlicer implements IVisual {
 
                 return {
                     table: filterTargetTable,
-                    // column: filterTargetColumn,
                     hierarchy: hierarchy,
-                    hierarchyLevel: hierarchyLevel
+                    hierarchyLevel: hierarchyLevel,
+                    column: filterTargetColumn
                 };
             }
-        
+
             return {
                 table: filterTargetTable,
                 column: filterTargetColumn
@@ -301,18 +296,15 @@ export class HierarchySlicer implements IVisual {
                 selectedIds = jFilter.values.map((values: any | any[]) => "|~" + (
                         Array.isArray(values) ?
                         values.map((value, index) => {
-                            let columnIndex = columnFilters.findIndex((filter: IFilterHierarchyTarget) => {
-                                    // workaround, because Power BI doesn't save hierarchy of the filter
-                                    if (filter.hierarchy) {
-                                        let filterCopy: IFilterColumnTarget = {
-                                            column: filter.hierarchyLevel,
-                                            table: filter.table
-                                        }
-                                        return isEqual(filterCopy, jFilter.target[index]) 
-                                    } else {
-                                        return isEqual(filter, jFilter.target[index]) 
-                                    }
-                                });
+                            let columnIndex = columnFilters.findIndex((filter:IFilterHierarchyTarget) => {
+                                // workaround, because Power BI doesn't save hierarchy of the filter
+                                if ((filter as IFilterHierarchyTarget).hierarchy) {
+                                    const { hierarchy, hierarchyLevel, ...filterCopy } = filter;
+                                    return isEqual(filterCopy, jFilter.target[index]);
+                                } else {
+                                    return isEqual(filter, jFilter.target[index]);
+                                }
+                            });
                             const format = columnIndex > -1 ? columns[columnIndex].format : undefined;
                             return { value: ValueFormat(value.value, format).replace(/,/g, "") + "-" + columnIndex.toString(), index: columnIndex };
                         }).sort((dp1, dp2) => dp1.index - dp2.index).map((dp) => dp.value).join('_|~')
